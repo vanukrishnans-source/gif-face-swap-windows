@@ -17,7 +17,11 @@ Touch-friendly **Windows x64** app for the **ASUS ROG Ally X** that swaps a face
 
 ## Download
 
-Grab **`GifFaceSwap-1.0.0-win64.zip`** from [Releases](https://github.com/vanukrishnans-source/gif-face-swap-windows/releases).
+Grab **`GifFaceSwap-1.0.0-win64.zip`** from [Releases](https://github.com/vanukrishnans-source/gif-face-swap-windows/releases/tag/v1.0.0).
+
+| Asset | Size | SHA-256 |
+|---|---|---|
+| [GifFaceSwap-1.0.0-win64.zip](https://github.com/vanukrishnans-source/gif-face-swap-windows/releases/download/v1.0.0/GifFaceSwap-1.0.0-win64.zip) | 147,621,132 B (~140.8 MB) | `a0040ddcadbe83568cf60a2c72d20efc0782440a437c1b6090acdb3114f380d7` |
 
 ### First launch (SmartScreen)
 
