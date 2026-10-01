@@ -1,7 +1,7 @@
 """GIF Face Swap — touch-first Qt UI for the ROG Ally X (7\" 1080p @ 150%).
 
 Flow: pick animated GIF → pick face photo → optional Flip / Options → Create.
-Body/skin colour match to the GIF subject is ON by default (FaceFusion LAB).
+Face-only soft seam blend by default; optional face-masked LAB colour match is OFF.
 """
 from __future__ import annotations
 
@@ -184,7 +184,7 @@ class MainWindow(QMainWindow):
         self.bench_done = False
         self.opt = dict(
             enhance=str(self.cfg.value("enhance", "gpen256")),
-            color_match=self.cfg.value("color_match", "true") not in (False, "false", "0", 0),
+            color_match=self.cfg.value("color_match", "false") in (True, "true", "1", 1),
             color_ref_path=str(self.cfg.value("color_ref_path", "") or ""),
             seamless=self.cfg.value("seamless", "false") in (True, "true", "1", 1),
             temporal_smooth=float(self.cfg.value("temporal_smooth", 0.12)),
@@ -264,7 +264,7 @@ class MainWindow(QMainWindow):
             self, "About",
             f"GIF Face Swap {__version__}\n"
             "FaceFusion-class models (YOLO + ArcFace + InSwapper + GPEN).\n"
-            "Body/skin colour match (LAB) on by default.\n"
+            "Face-only blend by default (optional LAB colour match off).\n"
             "Unsigned build — SmartScreen: More info → Run anyway.\n"
             "Models: InsightFace non-commercial research unless licensed.\n"
             f"Crash log: %LOCALAPPDATA%\\GifFaceSwap\\crash.log",
@@ -352,8 +352,8 @@ class MainWindow(QMainWindow):
 
         lay.addWidget(label("Create a face-swapped GIF", "title"))
         lay.addWidget(label(
-            "Pick an animated GIF and a clear face photo. Colour is matched to the GIF "
-            "subject’s body/skin tone (LAB) so the face doesn’t look mismatched.",
+            "Pick an animated GIF and a clear face photo. Faces are blended with a soft "
+            "seam (face-only). Optional colour match is off by default in Options.",
             "subtitle", True))
 
         self.slot_gif = ImageSlot("1 · Animated GIF", "Tap to pick a .gif")
@@ -501,7 +501,7 @@ class MainWindow(QMainWindow):
             device=str(self.opt.get("device", "auto")),
             out_dir=str(default_out_dir()),
             min_confidence=float(self.opt.get("min_confidence", 0.55)),
-            color_match=bool(self.opt.get("color_match", True)),
+            color_match=bool(self.opt.get("color_match", False)),
             color_ref_path=str(self.opt.get("color_ref_path", "") or ""),
             seamless=bool(self.opt.get("seamless", False)),
             temporal_smooth=float(self.opt.get("temporal_smooth", 0.12)),
@@ -515,7 +515,7 @@ class MainWindow(QMainWindow):
             parts.append(f"{len(self.photo.faces)} src face(s)")
         if self.rotation:
             parts.append(f"flip×{self.rotation}")
-        parts.append("colour match ON" if self.opt.get("color_match", True) else "colour match off")
+        parts.append("colour match ON" if self.opt.get("color_match", False) else "colour match off")
         if self.opt.get("color_ref_path"):
             parts.append("custom colour ref")
         enh = self.opt.get("enhance", "gpen256")
@@ -593,12 +593,12 @@ class MainWindow(QMainWindow):
         self.btn_dl_hq.clicked.connect(lambda: self._dl_enh("gpen512"))
         lay.addWidget(self.btn_dl_hq)
 
-        self.chk_color = QCheckBox("Match body/skin colour to GIF subject (LAB) — recommended")
+        self.chk_color = QCheckBox("Optional face colour match (LAB, face-masked only)")
         lay.addWidget(self.chk_color)
         self.chk_seamless = QCheckBox("Seamless blend (slower, better hairline)")
         lay.addWidget(self.chk_seamless)
 
-        lay.addWidget(label("Optional colour-look reference (instead of GIF frame skin)", "hint", True))
+        lay.addWidget(label("Optional colour-look reference (face ROI only; colour match must be on)", "hint", True))
         row = QHBoxLayout()
         self.btn_color_ref = button("Pick colour reference…")
         self.btn_color_ref.clicked.connect(self._pick_color_ref)
@@ -650,7 +650,7 @@ class MainWindow(QMainWindow):
         for v, b in self.dev_btns.items():
             b.setChecked(v == self.opt.get("device", "auto"))
         ref = self.opt.get("color_ref_path") or ""
-        self.lbl_color_ref.setText(Path(ref).name if ref else "Using GIF frame body/skin tone")
+        self.lbl_color_ref.setText(Path(ref).name if ref else "Using GIF frame face tone (if colour match on)")
         self.btn_dl_light.setEnabled(not self.store.is_installed(ENHANCER_LIGHT))
         self.btn_dl_hq.setEnabled(not self.store.is_installed(ENHANCER_HQ))
 
@@ -672,7 +672,7 @@ class MainWindow(QMainWindow):
 
     def _clear_color_ref(self):
         self.opt["color_ref_path"] = ""
-        self.lbl_color_ref.setText("Using GIF frame body/skin tone")
+        self.lbl_color_ref.setText("Using GIF frame face tone (if colour match on)")
 
     def _save_options(self):
         self.opt["color_match"] = self.chk_color.isChecked()

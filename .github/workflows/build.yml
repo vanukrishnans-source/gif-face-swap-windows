@@ -179,7 +179,7 @@ jobs:
           $lines = @(
             "GIF Face Swap **$ver** — portable Windows 10/11 x64 for the ASUS ROG Ally X (Radeon 780M, DirectML).",
             "FaceFusion-class pipeline: YOLO Face + ArcFace + inswapper_128 fp16 + optional GPEN.",
-            "Body/skin colour match (Reinhard LAB) to the GIF subject is **on by default**; optional colour-look reference image supported.",
+            "Face-only soft seam blend by default (no neck/body recolour). Optional face-masked LAB colour match is **off by default**.",
             "",
             "| Asset | Size | SHA-256 |",
             "|---|---|---|",

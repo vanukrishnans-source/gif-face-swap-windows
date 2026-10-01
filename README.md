@@ -2,11 +2,11 @@
 
 Touch-friendly **Windows x64** app for the **ASUS ROG Ally X** that swaps a face from a photo onto every frame of an animated GIF.
 
-**Powered by FaceFusion-compatible ONNX models** (same quality stack as Face Fusion Studio): YOLO Face detector, ArcFace identity, inswapper_128 (fp16), optional GPEN enhancer, plus **body/skin colour match (Reinhard LAB) on by default** so the swapped face matches the GIF subject’s skin tone (neck/blend region included). Optional separate colour-look reference image in Options.
+**Powered by FaceFusion-compatible ONNX models** (same quality stack as Face Fusion Studio): YOLO Face detector, ArcFace identity, inswapper_128 (fp16), optional GPEN enhancer. **Face-only soft seam blend by default** — no neck/body recolour. Optional face-masked Reinhard LAB colour match and colour-look reference are **off by default** (Options).
 
 | | This app |
 |---|---|
-| Package | GIF Face Swap **1.0.0** (portable zip) |
+| Package | GIF Face Swap **1.0.1** (portable zip) |
 | Acceleration | **ONNX Runtime DirectML** on Radeon 780M, automatic CPU fallback (child-process GPU probe) |
 | Mode | **Animated GIF** face swap |
 | Output | `%USERPROFILE%\Pictures\GifFaceSwap\` — verified GIF89a |
@@ -17,11 +17,11 @@ Touch-friendly **Windows x64** app for the **ASUS ROG Ally X** that swaps a face
 
 ## Download
 
-Grab **`GifFaceSwap-1.0.0-win64.zip`** from [Releases](https://github.com/vanukrishnans-source/gif-face-swap-windows/releases/tag/v1.0.0).
+Grab **`GifFaceSwap-1.0.1-win64.zip`** from [Releases](https://github.com/vanukrishnans-source/gif-face-swap-windows/releases/tag/v1.0.1).
 
 | Asset | Size | SHA-256 |
 |---|---|---|
-| [GifFaceSwap-1.0.0-win64.zip](https://github.com/vanukrishnans-source/gif-face-swap-windows/releases/download/v1.0.0/GifFaceSwap-1.0.0-win64.zip) | 147,621,132 B (~140.8 MB) | `a0040ddcadbe83568cf60a2c72d20efc0782440a437c1b6090acdb3114f380d7` |
+| [GifFaceSwap-1.0.1-win64.zip](https://github.com/vanukrishnans-source/gif-face-swap-windows/releases/download/v1.0.1/GifFaceSwap-1.0.1-win64.zip) | _(filled after CI publish)_ | _(filled after CI publish)_ |
 
 ### First launch (SmartScreen)
 
@@ -31,7 +31,7 @@ The build is **not code-signed**. Windows SmartScreen will say “Windows protec
 2. Click **Run anyway**
 
 ```powershell
-Get-FileHash .\GifFaceSwap-1.0.0-win64.zip -Algorithm SHA256
+Get-FileHash .\GifFaceSwap-1.0.1-win64.zip -Algorithm SHA256
 ```
 
 ### Install / run on Ally X
@@ -51,11 +51,11 @@ Models stay in `%LOCALAPPDATA%\GifFaceSwap\models`.
 4. Tap **Create face swap GIF**.
 5. Open the result in Photos / browser — it is a valid animated GIF89a.
 
-## Colour match (required feature, on by default)
+## Colour match (optional, off by default)
 
-- Matches the swapped face (and soft chin/neck blend) to the **GIF subject’s body/skin tone** via Reinhard LAB (same idea as Face Fusion Studio’s colour match).
-- Options → uncheck to disable.
-- Options → **Pick colour reference…** to match a separate look image instead of the GIF frame.
+- Default: **face-only** soft seam blend — does **not** recolour neck/chin/body toward the GIF subject’s skin tone.
+- Options → enable **Optional face colour match (LAB, face-masked only)** if you want Reinhard LAB against the face ROI only.
+- Options → **Pick colour reference…** to match a separate look image (still face-masked; colour match must be on).
 
 ## GIF limits
 

@@ -189,8 +189,8 @@ def selftest(args):
             report["dml_fallback_sim"] = _sim_dml_fallback(store)
             c["dml_fallback_sim_ok"] = bool(report["dml_fallback_sim"].get("ok"))
 
-        # Colour-match must be on by default in Settings
-        c["color_match_default_on"] = Settings().color_match is True
+        # Colour-match must be OFF by default (face-only seam blend)
+        c["color_match_default_off"] = Settings().color_match is False
 
         report["ok"] = all(bool(x) for k, x in c.items() if k != "photo_faces") and c["photo_faces"] >= 1
     except Exception as e:  # noqa: BLE001
@@ -242,7 +242,7 @@ def main(argv=None):
     p.add_argument("--enhance", default="gpen256", choices=["off", "gpen256", "gpen512"])
     p.add_argument("--max-short", type=int, default=480)
     p.add_argument("--min-confidence", type=float, default=0.55)
-    p.add_argument("--color-match", action=argparse.BooleanOptionalAction, default=True)
+    p.add_argument("--color-match", action=argparse.BooleanOptionalAction, default=False)
     p.add_argument("--color-ref", default="", help="Optional BGR look image for colour match")
     p.add_argument("--seamless", action="store_true")
     p.add_argument("--temporal-smooth", type=float, default=0.12)

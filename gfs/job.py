@@ -1,7 +1,7 @@
 """GIF face-swap job — FaceFusion-class pipeline (YOLO → ArcFace → InSwapper → optional GPEN).
 
-Per selected GIF frame: detect → pair → swap with body/skin LAB colour match (on by default)
-→ optional enhancer → encode verified GIF89a.
+Per selected GIF frame: detect → pair → face-only swap (soft seam blend; optional face-masked
+LAB colour match off by default) → optional enhancer → encode verified GIF89a.
 """
 from __future__ import annotations
 
@@ -39,9 +39,9 @@ class Settings:
     min_confidence: float = 0.55
     min_face_frac: float = 0.03
     same_gender: bool = False
-    # Body/skin colour match to GIF subject (Reinhard LAB) — ON by default
-    color_match: bool = True
-    # Optional separate look/reference image path for colour match instead of GIF frame
+    # Optional face-masked Reinhard LAB (OFF by default — face-only seam blend)
+    color_match: bool = False
+    # Optional look/reference image for colour match (face ROI only; no neck/body)
     color_ref_path: str = ""
     seamless: bool = False
     temporal_smooth: float = 0.12

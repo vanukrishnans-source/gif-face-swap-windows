@@ -190,8 +190,14 @@ def reinhard_lab(src_bgr, dst_bgr, mask_f):
     return cv2.cvtColor(np.clip(s, 0, 255).astype(np.uint8), cv2.COLOR_LAB2BGR).astype(np.float32)
 
 
-def paste_color_matched(frame, crop, mask, M, inplace=False, color_match=True, seamless=False,
+def paste_color_matched(frame, crop, mask, M, inplace=False, color_match=False, seamless=False,
                         color_ref=None):
+    """Paste swapped face with soft seam blend. Optional face-masked Reinhard LAB only.
+
+    Destination is always the original frame ROI (no neck/body recolour). When color_match
+    is on, LAB stats are taken under the face mask from the face ROI (or optional color_ref
+    crop) — never from a neck/chest strip.
+    """
     h, w = frame.shape[:2]; s = crop.shape[0]
     x0, y0, x1, y1 = paste_bbox(M, s, w, h)
     out = frame if inplace else frame.copy()
@@ -202,8 +208,9 @@ def paste_color_matched(frame, crop, mask, M, inplace=False, color_match=True, s
     A[1, 2] = M[1, 0] * x0 + M[1, 1] * y0 + M[1, 2]
     inv = sample_bilinear(crop.astype(np.float32), A, x1 - x0, y1 - y0, True)
     im = np.clip(sample_bilinear(mask.astype(np.float32), A, x1 - x0, y1 - y0, False), 0, 1)
-    # Body/skin tone reference: prefer an explicit look image (same crop window), else the
-    # target GIF frame ROI (face + neck/skin around the paste region).
+    # Always blend against the original frame patch (face-only seam; never a body-toned proxy).
+    dst = frame[y0:y1, x0:x1].astype(np.float32)
+    match_roi = dst
     if color_ref is not None and getattr(color_ref, "shape", None) is not None:
         rh, rw = color_ref.shape[:2]
         rx0, ry0 = min(x0, rw - 1), min(y0, rh - 1)
@@ -212,26 +219,10 @@ def paste_color_matched(frame, crop, mask, M, inplace=False, color_match=True, s
             ref_roi = color_ref[ry0:ry1, rx0:rx1].astype(np.float32)
             if ref_roi.shape[:2] != (y1 - y0, x1 - x0):
                 ref_roi = cv2.resize(ref_roi, (x1 - x0, y1 - y0), interpolation=cv2.INTER_LINEAR)
-            roi = ref_roi
-        else:
-            roi = frame[y0:y1, x0:x1].astype(np.float32)
-    else:
-        # Extend sampling slightly below the face bbox so neck/upper-chest skin pulls the match
-        pad = max(4, (y1 - y0) // 5)
-        sy0, sy1 = y0, min(h, y1 + pad)
-        roi = frame[sy0:sy1, x0:x1].astype(np.float32)
-        if sy1 - sy0 != y1 - y0:
-            # Build a reference patch the same size as inv by taking face ROI + neck strip mean-padded
-            face_roi = frame[y0:y1, x0:x1].astype(np.float32)
-            neck = frame[y1:sy1, x0:x1].astype(np.float32) if sy1 > y1 else None
-            if neck is not None and neck.size:
-                # Bias lab match toward body: blend face ROI with neck-strip mean colour
-                nm = neck.reshape(-1, 3).mean(axis=0)
-                roi = face_roi * 0.65 + nm.reshape(1, 1, 3) * 0.35
-            else:
-                roi = face_roi
+            match_roi = ref_roi
     if color_match:
-        inv = reinhard_lab(inv, roi, im)
+        # Face-masked only: Reinhard uses mask stats over the face ROI / look ref — no neck bias.
+        inv = reinhard_lab(inv, match_roi, im)
     if seamless and im.max() > 0.5:
         try:
             mu8 = (np.clip(im, 0, 1) * 255).astype(np.uint8)
@@ -242,13 +233,13 @@ def paste_color_matched(frame, crop, mask, M, inplace=False, color_match=True, s
                 center = (mx + mw // 2, my + mh // 2)
                 cloned = cv2.seamlessClone(
                     np.clip(inv, 0, 255).astype(np.uint8),
-                    np.clip(roi, 0, 255).astype(np.uint8),
+                    np.clip(dst, 0, 255).astype(np.uint8),
                     mu8.copy(), center, cv2.NORMAL_CLONE)
                 inv = cloned.astype(np.float32)
         except Exception:  # noqa: BLE001
             pass
     im3 = im[:, :, None]
-    out[y0:y1, x0:x1] = np.clip(im3 * inv + (np.float32(1) - im3) * roi + np.float32(0.5), 0, 255).astype(np.uint8)
+    out[y0:y1, x0:x1] = np.clip(im3 * inv + (np.float32(1) - im3) * dst + np.float32(0.5), 0, 255).astype(np.uint8)
     return out
 
 
@@ -269,24 +260,23 @@ def run_swapper(models, crop, latent):
     return np.clip(y.transpose(1, 2, 0), 0, 1)[:, :, ::-1] * np.float32(255)
 
 
-def swap_face(models, frame, tgt_pts, latent, inplace=False, color_match=True, seamless=False,
+def swap_face(models, frame, tgt_pts, latent, inplace=False, color_match=False, seamless=False,
               color_ref=None):
     """Warp target face every frame (expression/pose), inject source identity via latent.
 
-    colour match (default on): Reinhard LAB so the swapped face (+ soft neck/skin blend
-    region) matches the GIF subject's body/skin tone. Pass color_ref (BGR image + same
-    landmarks space) to match a separate reference look instead of the target frame ROI.
+    Default is face-only soft seam blend (no neck/body recolour). Optional color_match applies
+    face-masked Reinhard LAB against the face ROI (or color_ref). Mask stays face-shaped.
     """
     kps = kps5(tgt_pts)
     crop, M = warp(frame, kps, ARCFACE_128, 128)
     out = run_swapper(models, crop, latent)
-    # Slightly larger oval (grow) + softer feather → covers chin/upper-neck blend
-    mask = box_mask(128, 0.35) * oval_mask_from_kps(kps, M, 128, 0.18, 0.09)
+    # Face-only oval (tighter grow) + normal feather — seam blend, not chin/neck body match
+    mask = box_mask(128, 0.35) * oval_mask_from_kps(kps, M, 128, 0.12, 0.07)
     return paste_color_matched(frame, out, mask, M, inplace, color_match=color_match,
                                seamless=seamless, color_ref=color_ref)
 
 
-def enhance(models, frame, tgt_pts, restorer='gpen256', blend=0.8, inplace=False, color_match=True,
+def enhance(models, frame, tgt_pts, restorer='gpen256', blend=0.8, inplace=False, color_match=False,
             color_ref=None):
     name, size = RESTORERS[restorer]
     crop, M = warp(frame, kps5(tgt_pts), FFHQ_512, size)
@@ -294,17 +284,17 @@ def enhance(models, frame, tgt_pts, restorer='gpen256', blend=0.8, inplace=False
     y = models.run(name, {'input': np.ascontiguousarray(x, np.float32)})[0][0]
     y = ((np.clip(y.transpose(1, 2, 0), -1, 1) + np.float32(1)) / np.float32(2))[:, :, ::-1] * np.float32(255)
     y = crop * np.float32(1 - blend) + y * np.float32(blend)
-    mask = box_mask(size, 0.35) * oval_mask_from_kps(tgt_pts, M, size, 0.20, 0.08)
+    mask = box_mask(size, 0.35) * oval_mask_from_kps(tgt_pts, M, size, 0.14, 0.07)
     return paste_color_matched(frame, y, mask, M, inplace, color_match=color_match,
                                seamless=False, color_ref=color_ref)
 
 
-def process_frame(models, frame, faces, enhance_mode, color_match=True, seamless=False,
+def process_frame(models, frame, faces, enhance_mode, color_match=False, seamless=False,
                   temporal_ema=0.0, prev_out=None, color_ref=None):
     """faces: list of (pts/kps, latent).
 
-    color_match (default True): match swapped face (+ neck blend) to the GIF frame body/skin
-    tone via Reinhard LAB. color_ref: optional BGR image to match instead of the target frame.
+    color_match (default False): optional face-masked Reinhard LAB against the face ROI
+    (or color_ref). Off by default — keep normal face-swap seam blend only.
     """
     out = frame.copy()
     for pts, lat in faces:
