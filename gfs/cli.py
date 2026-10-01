@@ -180,6 +180,7 @@ def selftest(args):
         # Round-trip decode
         info2, frames2 = gifio.decode(out)
         c["gif_roundtrip_frames"] = info2.frame_count >= 1 and len(frames2) >= 1
+        # Informational only — default is off; CLI may enable with --color-match
         c["color_match_flag"] = bool(res.get("color_match"))
         report["output"] = dict(frames=info2.frame_count, size=out.stat().st_size,
                                 width=info2.width, height=info2.height)
@@ -192,7 +193,9 @@ def selftest(args):
         # Colour-match must be OFF by default (face-only seam blend)
         c["color_match_default_off"] = Settings().color_match is False
 
-        report["ok"] = all(bool(x) for k, x in c.items() if k != "photo_faces") and c["photo_faces"] >= 1
+        # color_match_flag is optional (off by default); photo_faces is a count
+        skip = {"photo_faces", "color_match_flag"}
+        report["ok"] = all(bool(x) for k, x in c.items() if k not in skip) and c["photo_faces"] >= 1
     except Exception as e:  # noqa: BLE001
         report["error"] = f"{type(e).__name__}: {e}"
         log.exception("selftest failed")
