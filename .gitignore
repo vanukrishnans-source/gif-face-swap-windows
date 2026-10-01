@@ -1,0 +1,12 @@
+.venv/
+__pycache__/
+*.pyc
+dist/
+build/
+.models-cache/
+*.spec.bak
+selftest-out/
+screens-ci/
+.ffmpeg/
+ffmpeg/
+*.egg-info/
