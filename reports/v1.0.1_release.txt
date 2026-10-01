@@ -1,0 +1,19 @@
+GIF Face Swap for Windows v1.0.1 — published 2026-10-02 ~05:24 IST (23:53 UTC 2026-10-01)
+
+URL: https://github.com/vanukrishnans-source/gif-face-swap-windows/releases/tag/v1.0.1
+Zip: GifFaceSwap-1.0.1-win64.zip
+Download: https://github.com/vanukrishnans-source/gif-face-swap-windows/releases/download/v1.0.1/GifFaceSwap-1.0.1-win64.zip
+Local: /workspace/GifFaceSwap-1.0.1-win64.zip
+Size: 147619072 bytes (~140.8 MB)
+SHA-256: 3bc13a374e4af9046815dd77802f5afbd89d09aa0605bb0fa640801d4dac6191
+CI: https://github.com/vanukrishnans-source/gif-face-swap-windows/actions/runs/36942796240 (success)
+
+What changed (UX / bugfix vs 1.0.0):
+- Default is FACE-ONLY soft seam blend — no Reinhard LAB recolour of neck/chin/body toward GIF body tone.
+- Removed neck/upper-chest strip sampling and body-mean bias from paste_color_matched.
+- Paste destination is always the original frame ROI (not a body-toned proxy).
+- Optional face-masked LAB colour match is OFF by default (Options checkbox; CLI --color-match).
+- Colour-look reference remains optional and face-ROI only when colour match is enabled.
+- Tightened face oval mask grow/feather (swap 0.12/0.07, enhance 0.14/0.07).
+
+Untouched: face-fusion-windows, face-swap-video-windows, Android gif-face-swap releases.
