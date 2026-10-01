@@ -236,8 +236,8 @@ class MainWindow(QMainWindow):
     def set_chip(self):
         try:
             eng = self.job.engine
-            if eng and getattr(eng, "device_info", None):
-                self.chip.setText(eng.device_info.label())
+            if eng and getattr(eng, "info", None):
+                self.chip.setText(eng.info.label())
                 return
         except Exception:  # noqa: BLE001
             pass
@@ -252,8 +252,9 @@ class MainWindow(QMainWindow):
     def _ensure_engine_hooks(self):
         try:
             eng = self.job.get_engine(self.opt.get("device", "auto"))
-            if hasattr(eng, "on_fallback"):
-                eng.on_fallback = self._toast_gpu_fallback
+            eng.on_fallback(self._toast_gpu_fallback)
+            if eng.info.fell_back:
+                QTimer.singleShot(200, lambda: self._toast_gpu_fallback(eng.info.fallback_reason))
             self.set_chip()
         except Exception as e:  # noqa: BLE001
             log.warning("engine hook: %s", e)

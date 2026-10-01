@@ -92,8 +92,8 @@ def dml_smoke(store, frame, dets, assign, photo):
         report["probe_reason"] = reason
         eng = Engine(store, "dml" if ok else "cpu")
         eng.prepare(None)
-        report["device"] = eng.device_info.label()
-        report["active"] = eng.device_info.active
+        report["device"] = eng.info.label()
+        report["active"] = eng.info.active
         report["ok"] = True
     except Exception as e:  # noqa: BLE001
         report["error"] = f"{type(e).__name__}: {e}"
@@ -109,8 +109,8 @@ def _sim_dml_fallback(store):
         eng = Engine(store, "auto")
         eng.prepare(None)
         alive = True
-        label = eng.device_info.label()
-        fell = eng.device_info.fell_back or eng.device_info.active == "CPU"
+        label = eng.info.label()
+        fell = eng.info.fell_back or eng.info.active == "CPU"
         return dict(ok=alive and fell, alive=alive, label=label, fell_back=fell)
     except Exception as e:  # noqa: BLE001
         return dict(ok=False, error=str(e))
