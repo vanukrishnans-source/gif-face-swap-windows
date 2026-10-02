@@ -151,6 +151,7 @@ def selftest(args):
 
         st = Settings(
             max_short=args.max_short, enhance=enh, device=args.device, out_dir=str(out_dir),
+            export_mp4=bool(getattr(args, "export_mp4", False)),
             min_confidence=args.min_confidence, color_match=args.color_match,
             color_ref_path=args.color_ref or "",
             temporal_smooth=args.temporal_smooth, seamless=args.seamless,
@@ -225,6 +226,7 @@ def run_gif_cli(args):
     photo = load_photo(args.photo, store=store, device=args.device)
     st = Settings(
         max_short=args.max_short, enhance=enh, device=args.device, out_dir=args.out or "",
+        export_mp4=bool(getattr(args, "export_mp4", False)),
         min_confidence=args.min_confidence, color_match=args.color_match,
         color_ref_path=args.color_ref or "", temporal_smooth=args.temporal_smooth,
         seamless=args.seamless,
@@ -243,12 +245,14 @@ def main(argv=None):
     p.add_argument("--model-cache", default=None)
     p.add_argument("--device", default="auto", choices=["auto", "dml", "cpu"])
     p.add_argument("--enhance", default="gpen256", choices=["off", "gpen256", "gpen512"])
-    p.add_argument("--max-short", type=int, default=480)
+    p.add_argument("--max-short", type=int, default=720)
     p.add_argument("--min-confidence", type=float, default=0.55)
     p.add_argument("--color-match", action=argparse.BooleanOptionalAction, default=False)
     p.add_argument("--color-ref", default="", help="Optional BGR look image for colour match")
     p.add_argument("--seamless", action="store_true")
     p.add_argument("--temporal-smooth", type=float, default=0.12)
+    p.add_argument("--export-mp4", action="store_true",
+                   help="Also write a sharper MP4 alongside the GIF")
     p.add_argument("--out", default="")
     p.add_argument("--gif", default="")
     p.add_argument("--photo", default="")

@@ -6,22 +6,22 @@ Touch-friendly **Windows x64** app for the **ASUS ROG Ally X** that swaps a face
 
 | | This app |
 |---|---|
-| Package | GIF Face Swap **1.0.1** (portable zip) |
+| Package | GIF Face Swap **1.0.2** (portable zip) |
 | Acceleration | **ONNX Runtime DirectML** on Radeon 780M, automatic CPU fallback (child-process GPU probe) |
 | Mode | **Animated GIF** face swap |
-| Output | `%USERPROFILE%\Pictures\GifFaceSwap\` — verified GIF89a |
+| Output | `%USERPROFILE%\Pictures\GifFaceSwap\` — verified GIF89a, optional MP4 |
 
-**Tech:** Python 3.13 + PySide6 + onnxruntime-directml + OpenCV + Pillow, packaged with PyInstaller on GitHub Actions `windows-latest`. **No FFmpeg** (GIF encode is in-process). **No MediaPipe.**
+**Tech:** Python 3.13 + PySide6 + onnxruntime-directml + OpenCV + Pillow, packaged with PyInstaller on GitHub Actions `windows-latest`. **No bundled FFmpeg** (GIF encode is Pillow / in-process LZW). Optional MP4 uses system `ffmpeg` libx264 CRF 17 when it is on PATH, otherwise OpenCV mp4v. **No MediaPipe.**
 
 > Standalone product — **not** an update to Face Fusion Studio, Face Swap Video (Windows), or the Android GIF Face Swap app. Those releases are untouched.
 
 ## Download
 
-Grab **`GifFaceSwap-1.0.1-win64.zip`** from [Releases](https://github.com/vanukrishnans-source/gif-face-swap-windows/releases/tag/v1.0.1).
+Grab **`GifFaceSwap-1.0.2-win64.zip`** from [Releases](https://github.com/vanukrishnans-source/gif-face-swap-windows/releases/tag/v1.0.2).
 
 | Asset | Size | SHA-256 |
 |---|---|---|
-| [GifFaceSwap-1.0.1-win64.zip](https://github.com/vanukrishnans-source/gif-face-swap-windows/releases/download/v1.0.1/GifFaceSwap-1.0.1-win64.zip) | 147,619,072 B (~140.8 MB) | `3bc13a374e4af9046815dd77802f5afbd89d09aa0605bb0fa640801d4dac6191` |
+| [GifFaceSwap-1.0.2-win64.zip](https://github.com/vanukrishnans-source/gif-face-swap-windows/releases/download/v1.0.2/GifFaceSwap-1.0.2-win64.zip) | _(see release)_ | _(see release / SHA256SUMS)_ |
 
 ### First launch (SmartScreen)
 
@@ -31,7 +31,7 @@ The build is **not code-signed**. Windows SmartScreen will say “Windows protec
 2. Click **Run anyway**
 
 ```powershell
-Get-FileHash .\GifFaceSwap-1.0.1-win64.zip -Algorithm SHA256
+Get-FileHash .\GifFaceSwap-1.0.2-win64.zip -Algorithm SHA256
 ```
 
 ### Install / run on Ally X
@@ -49,7 +49,7 @@ Models stay in `%LOCALAPPDATA%\GifFaceSwap\models`.
 2. Tap **Face from photo** → pick a clear face photo.
 3. Optional: **Flip faces**, **Options** (enhancer, colour match, colour-look reference, device).
 4. Tap **Create face swap GIF**.
-5. Open the result in Photos / browser — it is a valid animated GIF89a.
+5. Open the result in Photos / browser — valid animated GIF89a. Optional: Options → **Also export MP4** for a sharper non-GIF copy.
 
 ## Colour match (optional, off by default)
 
@@ -61,11 +61,12 @@ Models stay in `%LOCALAPPDATA%\GifFaceSwap\models`.
 
 | Limit | Value |
 |---|---|
-| Max frames processed | 80 (evenly subsampled if longer) |
+| Max frames processed | 100 (evenly subsampled if longer) |
 | Max duration used | 12 seconds |
-| Max short side while processing | 480 px (Options up to 720) |
+| Max short side while processing | **720 px default** (Options up to **1080**; no downscale when already smaller) |
 | Max GIF file size | 25 MB |
-| Output | Animated GIF (GIF89a, GCT + LZW Clear-at-current-width) |
+| Output | Animated GIF89a (Pillow adaptive palette + Floyd–Steinberg dither; LZW fallback) |
+| Optional | **Also export MP4** (sharper OpenCV mp4v alongside the GIF) |
 
 Frames with no detectable face are left unchanged.
 

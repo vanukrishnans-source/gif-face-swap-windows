@@ -46,6 +46,8 @@ class Settings:
     seamless: bool = False
     temporal_smooth: float = 0.12
     detector: str = "yolo"
+    # Also write a sharper MP4 alongside the GIF (OpenCV mp4v; no FFmpeg binary)
+    export_mp4: bool = False
 
     def detect_opts(self):
         from .detect import DetectOpts
@@ -268,11 +270,17 @@ class Job:
         out_path = Path(out_path)
         gifio.encode(out_frames, out_path, loop=True)
         gifio.verify_gif_file(out_path)
+        mp4_path = None
+        if st.export_mp4:
+            if progress:
+                progress(dict(stage="encode", done=0, total=1, detail="Writing sharper MP4…"))
+            mp4_path = out_path.with_suffix(".mp4")
+            gifio.encode_mp4(out_frames, mp4_path)
 
         res = dict(
             path=str(out_path), frames=n, W=W, H=H, mode="gif",
             fps=0.0, duration=sum(d for _, d in out_frames) / 1000.0,
-            encoder="gif89a", audio="gif (no sound)",
+            encoder="gif89a+pillow-dither", audio="gif (no sound)",
             device=dev.label(), device_active=dev.active, per_model=dict(dev.per_model),
             enhance=ENHANCE_LABEL.get(st.enhance),
             color_match=bool(st.color_match),
@@ -284,6 +292,8 @@ class Job:
             total_s=round(time.perf_counter() - t_start, 2),
             size=out_path.stat().st_size,
             before=frames[0].bgr, after=out_frames[0][0],
+            mp4=str(mp4_path) if mp4_path else "",
+            max_short=int(st.max_short),
         )
         if progress:
             progress(dict(stage="done", done=n, total=n, result=res))

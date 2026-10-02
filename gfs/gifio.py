@@ -28,12 +28,15 @@ import numpy as np
 
 log = logging.getLogger("gfs")
 
-MAX_SHORT_SIDE = 480
-MAX_FRAMES = 80
+MAX_SHORT_SIDE = 720          # default processing short-side (was 480 — too soft)
+MAX_SHORT_OPTION = 1080       # Options / CLI cap; keep nearer original when possible
+MAX_FRAMES = 100              # was 80
 MAX_DURATION_MS = 12_000
 MAX_FILE_BYTES = 25 * 1024 * 1024
 MIN_DELAY_MS = 40
 DEFAULT_DELAY_MS = 100
+GIF_PALETTE_COLORS = 256
+GIF_SAMPLE_PIXELS = 24_000    # was ~4k — better median-cut coverage
 
 
 class GifError(RuntimeError):
@@ -263,7 +266,7 @@ def plan_frames(info: GifInfo, frames: List[GifFrame], max_short: int = MAX_SHOR
     return W, H, out
 
 
-# -------------------- encode (median-cut + LZW, Clear @ current width) --------------------
+# -------------------- encode (HQ palette + dither; LZW Clear @ current width) --------------------
 
 def _palette_size_bits(n: int) -> int:
     bits, size = 0, 2
@@ -326,21 +329,69 @@ def _median_cut(colors: list[int], max_colors: int) -> np.ndarray:
     return np.array([b.average() for b in boxes], dtype=np.int64)
 
 
-def quantize(bgr: np.ndarray, max_colors: int = 256) -> Tuple[np.ndarray, np.ndarray]:
-    """Return (indexed HxW uint8, palette Nx3 RGB uint8)."""
+def _floyd_steinberg(rgb: np.ndarray, palette: np.ndarray) -> np.ndarray:
+    """Dither RGB HxWx3 uint8 onto palette Nx3 → indexed HxW uint8 (in-place error diffusion)."""
+    h, w = rgb.shape[:2]
+    work = rgb.astype(np.float32).copy()
+    pal = palette.astype(np.float32)
+    out = np.zeros((h, w), np.uint8)
+    n = len(pal)
+    for y in range(h):
+        for x in range(w):
+            old = work[y, x]
+            # nearest palette entry
+            d = pal - old
+            i = int(np.argmin((d * d).sum(axis=1)))
+            out[y, x] = i
+            err = old - pal[i]
+            if x + 1 < w:
+                work[y, x + 1] += err * (7.0 / 16.0)
+            if y + 1 < h:
+                if x > 0:
+                    work[y + 1, x - 1] += err * (3.0 / 16.0)
+                work[y + 1, x] += err * (5.0 / 16.0)
+                if x + 1 < w:
+                    work[y + 1, x + 1] += err * (1.0 / 16.0)
+    return out
+
+
+def quantize(bgr: np.ndarray, max_colors: int = GIF_PALETTE_COLORS,
+             dither: bool = True) -> Tuple[np.ndarray, np.ndarray]:
+    """Return (indexed HxW uint8, palette Nx3 RGB uint8). Prefer Pillow adaptive + FS dither."""
     rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
+    max_colors = max(2, min(256, int(max_colors)))
+    # Pillow path — sharper gradients, less banding than thin median-cut
+    try:
+        from PIL import Image
+        im = Image.fromarray(rgb)
+        q = im.quantize(
+            colors=max_colors,
+            method=Image.Quantize.MEDIANCUT,
+            dither=Image.Dither.FLOYDSTEINBERG if dither else Image.Dither.NONE,
+        )
+        pal = q.getpalette() or []
+        n = max(2, min(256, len(pal) // 3))
+        palette = np.zeros((n, 3), np.uint8)
+        for i in range(n):
+            palette[i] = (pal[i * 3], pal[i * 3 + 1], pal[i * 3 + 2])
+        idx = np.array(q, dtype=np.uint8)
+        # Pillow may report more palette slots than used; trim to power-of-2 friendly count later
+        return idx, palette
+    except Exception as e:  # noqa: BLE001
+        log.info("Pillow quantize unavailable (%s); median-cut fallback", e)
+
     flat = rgb.reshape(-1, 3)
-    step = max(1, flat.shape[0] // 4000)
+    step = max(1, flat.shape[0] // GIF_SAMPLE_PIXELS)
     sample = flat[::step]
     colors = [int(r) << 16 | int(g) << 8 | int(b) for r, g, b in sample]
     if not colors:
         colors = [0]
-    pal_int = _median_cut(colors, max(2, min(256, max_colors)))
+    pal_int = _median_cut(colors, max_colors)
     palette = np.zeros((len(pal_int), 3), np.uint8)
     for i, c in enumerate(pal_int):
         palette[i] = ((c >> 16) & 255, (c >> 8) & 255, c & 255)
-    # nearest
-    # vectorised distance
+    if dither and flat.shape[0] <= 1_200_000:  # FS is O(pixels); skip on huge frames
+        return _floyd_steinberg(rgb, palette), palette
     diff = flat.astype(np.int16)[:, None, :] - palette.astype(np.int16)[None, :, :]
     dist = (diff * diff).sum(axis=2)
     idx = dist.argmin(axis=1).astype(np.uint8).reshape(bgr.shape[:2])
@@ -350,9 +401,7 @@ def quantize(bgr: np.ndarray, max_colors: int = 256) -> Tuple[np.ndarray, np.nda
 def _lzw_encode(index: np.ndarray, clear_size: int, out: io.BufferedIOBase) -> None:
     clear = clear_size
     eof = clear + 1
-    init_width = (clear.bit_length())  # numberOfTrailingZeros(clear)+1 == bit_length for power-of-2
-    # clear is power of 2; width = log2(clear)+1
-    init_width = int(clear).bit_length()  # 2**n → n+1; for clear=4 (2^2) bit_length=3 = minCode+1 ✓
+    init_width = int(clear).bit_length()  # clear=2**n → n+1
     table: dict[int, int] = {}
 
     def key(prefix: int, k: int) -> int:
@@ -425,18 +474,62 @@ def _lzw_encode(index: np.ndarray, clear_size: int, out: io.BufferedIOBase) -> N
 
 
 def encode(frames: Sequence[Tuple[np.ndarray, int]], out_path: Path | str, loop: bool = True) -> Path:
-    """Encode list of (bgr, delay_ms) to a verified GIF89a file."""
+    """Encode list of (bgr, delay_ms) to a verified GIF89a file (HQ palette + dither)."""
     if not frames:
         raise GifError("No frames to encode.")
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
+    # Prefer Pillow's GIF writer when available — adaptive palette + FS dither per frame
+    try:
+        return _encode_pillow(frames, out_path, loop=loop)
+    except Exception as e:  # noqa: BLE001
+        log.info("Pillow GIF encode unavailable (%s); using in-process LZW", e)
+    return _encode_lzw(frames, out_path, loop=loop)
+
+
+def _encode_pillow(frames: Sequence[Tuple[np.ndarray, int]], out_path: Path, loop: bool = True) -> Path:
+    from PIL import Image
+    tmp = out_path.with_suffix(out_path.suffix + ".part")
+    imgs: list = []
+    durs: list[int] = []
+    for bgr, delay in frames:
+        rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
+        im = Image.fromarray(rgb)
+        q = im.quantize(
+            colors=GIF_PALETTE_COLORS,
+            method=Image.Quantize.MEDIANCUT,
+            dither=Image.Dither.FLOYDSTEINBERG,
+        )
+        imgs.append(q)
+        durs.append(max(int(delay), MIN_DELAY_MS))
+    try:
+        imgs[0].save(
+            tmp,
+            save_all=True,
+            append_images=imgs[1:],
+            duration=durs,
+            loop=0 if loop else 1,
+            disposal=2,
+            optimize=False,
+        )
+        verify_gif_file(tmp)
+        tmp.replace(out_path)
+        verify_gif_file(out_path)
+    except Exception:
+        tmp.unlink(missing_ok=True)
+        out_path.unlink(missing_ok=True)
+        raise
+    return out_path
+
+
+def _encode_lzw(frames: Sequence[Tuple[np.ndarray, int]], out_path: Path, loop: bool = True) -> Path:
     tmp = out_path.with_suffix(out_path.suffix + ".part")
     h0, w0 = frames[0][0].shape[:2]
     prepared: list[Tuple[np.ndarray, np.ndarray, int]] = []
     for bgr, delay in frames:
         if bgr.shape[0] != h0 or bgr.shape[1] != w0:
             raise GifError("frame size mismatch")
-        indexed, palette = quantize(bgr, 256)
+        indexed, palette = quantize(bgr, GIF_PALETTE_COLORS, dither=True)
         prepared.append((indexed, palette, max(int(delay), MIN_DELAY_MS)))
 
     gct = prepared[0][1]
@@ -448,7 +541,6 @@ def encode(frames: Sequence[Tuple[np.ndarray, int]], out_path: Path | str, loop:
             os_.write(b"GIF89a")
             os_.write(struct.pack("<HH", w0, h0))
             os_.write(bytes([0x80 | 0x70 | gct_bits, 0, 0]))
-            # GCT
             for i in range(gct_count):
                 if i < len(gct):
                     os_.write(bytes([int(gct[i, 0]), int(gct[i, 1]), int(gct[i, 2])]))
@@ -484,6 +576,90 @@ def encode(frames: Sequence[Tuple[np.ndarray, int]], out_path: Path | str, loop:
         tmp.replace(out_path)
         verify_gif_file(out_path)
     except Exception:
+        tmp.unlink(missing_ok=True)
+        out_path.unlink(missing_ok=True)
+        raise
+    return out_path
+
+
+def encode_mp4(frames: Sequence[Tuple[np.ndarray, int]], out_path: Path | str, fps: float | None = None) -> Path:
+    """Sharper non-GIF alternative. Uses system ffmpeg (libx264 CRF 17) when present, else OpenCV mp4v."""
+    if not frames:
+        raise GifError("No frames to encode as MP4.")
+    out_path = Path(out_path)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    h0, w0 = frames[0][0].shape[:2]
+    if fps is None or fps <= 0:
+        delays = [max(int(d), MIN_DELAY_MS) for _, d in frames]
+        med = float(sorted(delays)[len(delays) // 2])
+        fps = max(4.0, min(30.0, 1000.0 / med))
+    W, H = max(2, w0 - (w0 % 2)), max(2, h0 - (h0 % 2))
+    tmp = out_path.with_suffix(out_path.suffix + ".part.mp4")
+    try:
+        if _encode_mp4_ffmpeg(frames, tmp, W, H, float(fps)):
+            tmp.replace(out_path)
+            return out_path
+    except Exception as e:  # noqa: BLE001
+        log.info("ffmpeg MP4 encode failed (%s); falling back to OpenCV", e)
+        tmp.unlink(missing_ok=True)
+    return _encode_mp4_opencv(frames, out_path, tmp, W, H, float(fps))
+
+
+def _encode_mp4_ffmpeg(frames, tmp: Path, W: int, H: int, fps: float) -> bool:
+    import shutil
+    import subprocess
+    exe = shutil.which("ffmpeg")
+    if not exe:
+        return False
+    cmd = [
+        exe, "-y", "-loglevel", "error",
+        "-f", "rawvideo", "-pix_fmt", "bgr24", "-s", f"{W}x{H}", "-r", f"{fps:.4f}",
+        "-i", "pipe:0",
+        "-c:v", "libx264", "-preset", "fast", "-crf", "17", "-pix_fmt", "yuv420p",
+        "-movflags", "+faststart", str(tmp),
+    ]
+    proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+    try:
+        assert proc.stdin is not None
+        for bgr, _ in frames:
+            fr = bgr
+            if fr.shape[1] != W or fr.shape[0] != H:
+                fr = cv2.resize(fr, (W, H), interpolation=cv2.INTER_AREA)
+            proc.stdin.write(np.ascontiguousarray(fr).tobytes())
+        proc.stdin.close()
+        err = proc.stderr.read() if proc.stderr else b""
+        rc = proc.wait(timeout=120)
+    except Exception:
+        proc.kill()
+        raise
+    if rc != 0 or not tmp.is_file() or tmp.stat().st_size < 64:
+        log.info("ffmpeg mp4 rc=%s %s", rc, err[:300])
+        tmp.unlink(missing_ok=True)
+        return False
+    return True
+
+
+def _encode_mp4_opencv(frames, out_path: Path, tmp: Path, W: int, H: int, fps: float) -> Path:
+    fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+    vw = cv2.VideoWriter(str(tmp), fourcc, float(fps), (W, H))
+    if not vw.isOpened():
+        tmp.unlink(missing_ok=True)
+        raise GifError("Could not open an MP4 writer (install ffmpeg or an OpenCV build with mp4v).")
+    try:
+        for bgr, _ in frames:
+            fr = bgr
+            if fr.shape[1] != W or fr.shape[0] != H:
+                fr = cv2.resize(fr, (W, H), interpolation=cv2.INTER_AREA)
+            vw.write(fr)
+        vw.release()
+        if not tmp.is_file() or tmp.stat().st_size < 64:
+            raise GifError("MP4 write produced an empty file.")
+        tmp.replace(out_path)
+    except Exception:
+        try:
+            vw.release()
+        except Exception:
+            pass
         tmp.unlink(missing_ok=True)
         out_path.unlink(missing_ok=True)
         raise

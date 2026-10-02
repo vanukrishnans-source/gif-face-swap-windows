@@ -182,6 +182,13 @@ class MainWindow(QMainWindow):
         self.rotation = 0
         self.result = None
         self.bench_done = False
+        # One-shot quality bump: old installs defaulted to 480 short-side (soft/pixelated).
+        _ms = int(self.cfg.value("max_short", gifio.MAX_SHORT_SIDE))
+        if str(self.cfg.value("quality_v102", "")) != "1":
+            if _ms < 720:
+                _ms = gifio.MAX_SHORT_SIDE
+            self.cfg.setValue("quality_v102", "1")
+            self.cfg.setValue("max_short", _ms)
         self.opt = dict(
             enhance=str(self.cfg.value("enhance", "gpen256")),
             color_match=self.cfg.value("color_match", "false") in (True, "true", "1", 1),
@@ -189,7 +196,8 @@ class MainWindow(QMainWindow):
             seamless=self.cfg.value("seamless", "false") in (True, "true", "1", 1),
             temporal_smooth=float(self.cfg.value("temporal_smooth", 0.12)),
             min_confidence=float(self.cfg.value("min_confidence", 0.55)),
-            max_short=int(self.cfg.value("max_short", gifio.MAX_SHORT_SIDE)),
+            max_short=_ms,
+            export_mp4=self.cfg.value("export_mp4", "false") in (True, "true", "1", 1),
             device=dev,
         )
         if self.opt["enhance"] not in ("off", "gpen256", "gpen512"):
@@ -505,6 +513,7 @@ class MainWindow(QMainWindow):
             color_ref_path=str(self.opt.get("color_ref_path", "") or ""),
             seamless=bool(self.opt.get("seamless", False)),
             temporal_smooth=float(self.opt.get("temporal_smooth", 0.12)),
+            export_mp4=bool(self.opt.get("export_mp4", False)),
         )
 
     def _update_summary(self):
@@ -520,6 +529,9 @@ class MainWindow(QMainWindow):
             parts.append("custom colour ref")
         enh = self.opt.get("enhance", "gpen256")
         parts.append(ENHANCE_LABEL.get(None if enh == "off" else enh, enh))
+        parts.append(f"short≤{int(self.opt.get('max_short', gifio.MAX_SHORT_SIDE))}")
+        if self.opt.get("export_mp4"):
+            parts.append("MP4 export")
         self.summary.setText(" · ".join(parts))
         ok = bool(self.gif_path and self.photo and self.photo.faces)
         self.btn_start.setEnabled(ok and not self._busy_worker())
@@ -612,12 +624,16 @@ class MainWindow(QMainWindow):
 
         lay.addWidget(label("Max short side while processing", "section"))
         self.s_short = QSlider(Qt.Orientation.Horizontal)
-        self.s_short.setRange(240, 720)
+        self.s_short.setRange(240, gifio.MAX_SHORT_OPTION)
         self.s_short.setSingleStep(16)
         lay.addWidget(self.s_short)
         self.lbl_short = label("", "hint")
         lay.addWidget(self.lbl_short)
         self.s_short.valueChanged.connect(lambda v: self.lbl_short.setText(f"{v} px"))
+
+        self.chk_mp4 = QCheckBox("Also export MP4 (sharper, non-GIF alternative)")
+        lay.addWidget(self.chk_mp4)
+        lay.addWidget(label("Tip: leave short side at 720+ so output stays near the original size.", "hint", True))
 
         lay.addWidget(label("Device", "section"))
         drow = QHBoxLayout()
@@ -647,6 +663,7 @@ class MainWindow(QMainWindow):
         self.chk_seamless.setChecked(bool(self.opt.get("seamless", False)))
         self.s_short.setValue(int(self.opt.get("max_short", gifio.MAX_SHORT_SIDE)))
         self.lbl_short.setText(f"{self.s_short.value()} px")
+        self.chk_mp4.setChecked(bool(self.opt.get("export_mp4", False)))
         for v, b in self.dev_btns.items():
             b.setChecked(v == self.opt.get("device", "auto"))
         ref = self.opt.get("color_ref_path") or ""
@@ -678,6 +695,7 @@ class MainWindow(QMainWindow):
         self.opt["color_match"] = self.chk_color.isChecked()
         self.opt["seamless"] = self.chk_seamless.isChecked()
         self.opt["max_short"] = int(self.s_short.value())
+        self.opt["export_mp4"] = self.chk_mp4.isChecked()
         for k, v in self.opt.items():
             self.cfg.setValue(k, v)
         self._update_summary()

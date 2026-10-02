@@ -14,6 +14,6 @@
 | **GFPGAN** (optional) | Apache-2.0 | Tencent ARC. |
 | **FaceFusion model hosting** | Various | Models downloaded from `facefusion/facefusion-assets` releases / HF mirror. This app is **not** a redistribution of the FaceFusion GPL application. |
 
-GIF encode: in-process GIF89a (median-cut + LZW). Lessons from Android GifFaceSwap 1.0.1 (Clear at current code width + Global Color Table).
+GIF encode: Pillow adaptive median-cut + Floyd–Steinberg dither (preferred); in-process GIF89a LZW fallback (Clear at current code width + Global Color Table). Optional MP4 via OpenCV VideoWriter (mp4v).
 
 Test image: see `testdata/SOURCES.md`. Private people / CC0 only — no public figures.
