@@ -21,7 +21,7 @@ Grab **`GifFaceSwap-1.0.2-win64.zip`** from [Releases](https://github.com/vanukr
 
 | Asset | Size | SHA-256 |
 |---|---|---|
-| [GifFaceSwap-1.0.2-win64.zip](https://github.com/vanukrishnans-source/gif-face-swap-windows/releases/download/v1.0.2/GifFaceSwap-1.0.2-win64.zip) | _(see release)_ | _(see release / SHA256SUMS)_ |
+| [GifFaceSwap-1.0.2-win64.zip](https://github.com/vanukrishnans-source/gif-face-swap-windows/releases/download/v1.0.2/GifFaceSwap-1.0.2-win64.zip) | 147,634,050 B (~140.8 MB) | `7728f9132312cba140ad63dad3eb3e9501a29db21b11c602a70081a68c12e7e7` |
 
 ### First launch (SmartScreen)
 

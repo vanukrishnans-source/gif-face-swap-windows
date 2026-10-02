@@ -1,0 +1,29 @@
+GIF Face Swap for Windows v1.0.2 — published 2026-10-02 ~05:48 IST (00:18 UTC)
+
+URL: https://github.com/vanukrishnans-source/gif-face-swap-windows/releases/tag/v1.0.2
+Zip: GifFaceSwap-1.0.2-win64.zip
+Download: https://github.com/vanukrishnans-source/gif-face-swap-windows/releases/download/v1.0.2/GifFaceSwap-1.0.2-win64.zip
+Local: /workspace/GifFaceSwap-1.0.2-win64.zip
+Size: 147634050 bytes (~140.8 MB)
+SHA-256: 7728f9132312cba140ad63dad3eb3e9501a29db21b11c602a70081a68c12e7e7
+CI: https://github.com/vanukrishnans-source/gif-face-swap-windows/actions/runs/36944936831 (success)
+
+What changed (quality vs 1.0.1):
+- Default processing short side 720 (was 480); Options / CLI up to 1080; no downscale when already smaller.
+- One-shot Options migrate: stored max_short < 720 is bumped to 720 on first 1.0.2 launch.
+- Max frames 100 (was 80).
+- GIF encode: Pillow adaptive 256-color + Floyd–Steinberg dither (LZW Clear-at-width fallback).
+- Optional Also export MP4 (ffmpeg libx264 CRF 17 when on PATH; else OpenCV mp4v).
+
+Face Fusion Studio (quick check — not patched):
+- Final stage is mux after H.264 encode; default max_short already 1080.
+- Bitrate ~0.15 bpp (libopenh264 0.2). Soft Final on FFS is more likely low Options short-side or bitrate than the GIF-app 480 downscale bug.
+- Left face-fusion / face-swap-video releases untouched.
+
+Quality samples (local CPU face-swap verify):
+- /workspace/GifFaceSwap-1.0.2-quality-samples/after_1.0.2_hq.gif (960×640, no downscale)
+- /workspace/GifFaceSwap-1.0.2-quality-samples/after_1.0.2_hq.mp4
+- /workspace/GifFaceSwap-1.0.2-quality-samples/compare_frame0.jpg
+- /workspace/GifFaceSwap-1.0.2-quality-samples/before_1.0.1_soft.gif (720×480 soft palette)
+
+Untouched: face-fusion-windows, face-swap-video-windows, Android gif-face-swap releases.
