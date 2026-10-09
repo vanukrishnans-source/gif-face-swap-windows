@@ -146,6 +146,11 @@ jobs:
           $hdr = [System.IO.File]::ReadAllBytes($gif.FullName)[0..5]
           $mag = [System.Text.Encoding]::ASCII.GetString($hdr)
           if ($mag -ne "GIF89a" -and $mag -ne "GIF87a") { throw "bad gif magic $mag" }
+          $wp = Get-ChildItem selftest-out\cli\selftest_output_webp.webp | Select-Object -First 1
+          if (-not $wp) { throw "webp selftest output missing" }
+          $wb = [System.IO.File]::ReadAllBytes($wp.FullName)
+          if ([System.Text.Encoding]::ASCII.GetString($wb[0..3]) -ne "RIFF" -or [System.Text.Encoding]::ASCII.GetString($wb[8..11]) -ne "WEBP") { throw "bad webp magic" }
+          Write-Host "webp OK size=$($wp.Length)"
           Write-Host "anonymous zip OK: $($zip.Name) sha=$sha exe=$($exe.FullName) gif=$mag size=$($gif.Length)"
 
       - name: Upload build + test artifacts
@@ -180,6 +185,7 @@ jobs:
             "GIF Face Swap **$ver** — portable Windows 10/11 x64 for the ASUS ROG Ally X (Radeon 780M, DirectML).",
             "FaceFusion-class pipeline: YOLO Face + ArcFace + inswapper_128 fp16 + optional GPEN.",
             "Face-only soft seam blend by default (no neck/body recolour). Optional face-masked LAB colour match is **off by default**.",
+            "**1.0.3:** WebP support - open animated or static .webp (keeps frame durations + loop), export animated WebP (q95 near-lossless, full output resolution). Output format Auto follows input; GIF / WebP / MP4 selectable in Options.",
             "**1.0.2 quality:** default short side 720 (was 480), Options up to 1080; sharper GIF palette/dither; optional MP4 export.",
             "",
             "| Asset | Size | SHA-256 |",

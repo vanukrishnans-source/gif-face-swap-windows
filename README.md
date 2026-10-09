@@ -6,10 +6,10 @@ Touch-friendly **Windows x64** app for the **ASUS ROG Ally X** that swaps a face
 
 | | This app |
 |---|---|
-| Package | GIF Face Swap **1.0.2** (portable zip) |
+| Package | GIF Face Swap **1.0.3** (portable zip) |
 | Acceleration | **ONNX Runtime DirectML** on Radeon 780M, automatic CPU fallback (child-process GPU probe) |
-| Mode | **Animated GIF** face swap |
-| Output | `%USERPROFILE%\Pictures\GifFaceSwap\` — verified GIF89a, optional MP4 |
+| Mode | **Animated GIF / WebP** (animated or static .webp) face swap |
+| Output | `%USERPROFILE%\Pictures\GifFaceSwap\` — GIF89a, animated WebP (q95), or MP4 — Auto follows input format |
 
 **Tech:** Python 3.13 + PySide6 + onnxruntime-directml + OpenCV + Pillow, packaged with PyInstaller on GitHub Actions `windows-latest`. **No bundled FFmpeg** (GIF encode is Pillow / in-process LZW). Optional MP4 uses system `ffmpeg` libx264 CRF 17 when it is on PATH, otherwise OpenCV mp4v. **No MediaPipe.**
 
@@ -17,7 +17,7 @@ Touch-friendly **Windows x64** app for the **ASUS ROG Ally X** that swaps a face
 
 ## Download
 
-Grab **`GifFaceSwap-1.0.2-win64.zip`** from [Releases](https://github.com/vanukrishnans-source/gif-face-swap-windows/releases/tag/v1.0.2).
+Grab **`GifFaceSwap-1.0.3-win64.zip`** from [Releases](https://github.com/vanukrishnans-source/gif-face-swap-windows/releases/tag/v1.0.3).
 
 | Asset | Size | SHA-256 |
 |---|---|---|
@@ -31,7 +31,7 @@ The build is **not code-signed**. Windows SmartScreen will say “Windows protec
 2. Click **Run anyway**
 
 ```powershell
-Get-FileHash .\GifFaceSwap-1.0.2-win64.zip -Algorithm SHA256
+Get-FileHash .\GifFaceSwap-1.0.3-win64.zip -Algorithm SHA256
 ```
 
 ### Install / run on Ally X

@@ -52,6 +52,9 @@ class GifInfo:
     delays_ms: list
     file_bytes: int
     path: str = ""
+    fmt: str = "gif"          # "gif" | "webp"
+    loop: int = 0             # 0 = forever, N = play N times
+    animated: bool = True
 
 
 @dataclass
@@ -188,8 +191,10 @@ def decode(path: Path | str) -> Tuple[GifInfo, List[GifFrame]]:
     if size > MAX_FILE_BYTES:
         raise GifError(f"That GIF is too large (max {MAX_FILE_BYTES // (1024 * 1024)} MB).")
     data = path.read_bytes()
+    if is_webp_bytes(data):
+        return decode_webp(path, data)
     if len(data) < 13 or data[:3] != b"GIF":
-        raise GifError("That file isn't a GIF.")
+        raise GifError("That file isn't a GIF or WebP.")
     delays = parse_delays(data)
     if not delays:
         delays = [DEFAULT_DELAY_MS]
@@ -246,9 +251,97 @@ def decode(path: Path | str) -> Tuple[GifInfo, List[GifFrame]]:
     info = GifInfo(
         width=w, height=h, frame_count=len(frames),
         duration_ms=sum(delays), delays_ms=list(delays),
-        file_bytes=size, path=str(path),
+        file_bytes=size, path=str(path), fmt="gif", loop=_gif_loop(data),
+        animated=len(frames) > 1,
     )
     return info, frames
+
+
+def _gif_loop(data: bytes) -> int:
+    i = data.find(b"NETSCAPE2.0")
+    if i < 0 or i + 16 > len(data):
+        return 0
+    return data[i + 13] | (data[i + 14] << 8)
+
+
+# -------------------- WebP (animated + static) --------------------
+
+def is_webp_bytes(data: bytes) -> bool:
+    return len(data) >= 12 and data[:4] == b"RIFF" and data[8:12] == b"WEBP"
+
+
+def _rgba_to_bgr(arr: np.ndarray) -> np.ndarray:
+    a = arr[:, :, 3:4].astype(np.float32) / 255.0
+    rgb = arr[:, :, :3].astype(np.float32) * a + 255.0 * (1.0 - a)
+    return cv2.cvtColor(np.clip(rgb, 0, 255).astype(np.uint8), cv2.COLOR_RGB2BGR)
+
+
+def decode_webp(path: Path, data: bytes) -> Tuple[GifInfo, List[GifFrame]]:
+    try:
+        from PIL import Image, ImageSequence
+    except Exception as e:  # noqa: BLE001
+        raise GifError(f"WebP needs Pillow: {e}") from e
+    try:
+        im = Image.open(io.BytesIO(data))
+        im.load()
+    except Exception as e:  # noqa: BLE001
+        raise GifError(f"Couldn't decode that WebP: {e}") from e
+    loop = int(im.info.get("loop", 0) or 0)
+    frames: list[GifFrame] = []
+    animated = bool(getattr(im, "is_animated", False))
+    for fr in ImageSequence.Iterator(im):
+        fr.load()  # WebP sets per-frame duration only after load
+        d = int(fr.info.get("duration", 0) or 0)
+        if not animated:
+            d = DEFAULT_DELAY_MS
+        frames.append(GifFrame(bgr=_rgba_to_bgr(np.array(fr.convert("RGBA"))),
+                               delay_ms=max(d or DEFAULT_DELAY_MS, MIN_DELAY_MS)))
+    if not frames:
+        raise GifError("No frames found in that WebP.")
+    h, w = frames[0].bgr.shape[:2]
+    delays = [f.delay_ms for f in frames]
+    info = GifInfo(width=w, height=h, frame_count=len(frames), duration_ms=sum(delays),
+                   delays_ms=delays, file_bytes=len(data), path=str(path), fmt="webp",
+                   loop=loop, animated=animated)
+    return info, frames
+
+
+def encode_webp(frames: Sequence[Tuple[np.ndarray, int]], out_path: Path | str,
+                loop_count: int = 0, lossless: bool = False, quality: int = 95) -> Path:
+    """Animated (or single-frame) WebP at full output resolution. Default: near-lossless
+    high quality (q95, method 6). Keeps per-frame durations and loop count."""
+    from PIL import Image
+    if not frames:
+        raise GifError("No frames to encode as WebP.")
+    out_path = Path(out_path)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    ims = [Image.fromarray(cv2.cvtColor(b, cv2.COLOR_BGR2RGB)) for b, _ in frames]
+    durs = [max(int(d), MIN_DELAY_MS) for _, d in frames]
+    tmp = out_path.with_name(out_path.name + ".part")
+    kw = dict(format="WEBP", quality=100 if lossless else quality, method=6, lossless=lossless)
+    if len(ims) > 1:
+        ims[0].save(tmp, save_all=True, append_images=ims[1:], duration=durs,
+                    loop=int(loop_count), minimize_size=False, allow_mixed=False, **kw)
+    else:
+        ims[0].save(tmp, **kw)
+    tmp.replace(out_path)
+    verify_webp_file(out_path, expect_frames=len(ims))
+    return out_path
+
+
+def verify_webp_file(path: Path | str, expect_frames: int | None = None) -> None:
+    path = Path(path)
+    if not path.is_file() or path.stat().st_size < 32:
+        raise GifError("Encoded WebP missing or too small.")
+    with open(path, "rb") as fh:
+        hdr = fh.read(12)
+    if not is_webp_bytes(hdr):
+        raise GifError(f"Encoded file is not a WebP (got {hdr.hex()}).")
+    from PIL import Image
+    with Image.open(path) as im:
+        n = getattr(im, "n_frames", 1)
+    if expect_frames is not None and n != expect_frames:
+        raise GifError(f"WebP has {n} frames, expected {expect_frames}.")
 
 
 def plan_frames(info: GifInfo, frames: List[GifFrame], max_short: int = MAX_SHORT_SIDE
@@ -511,6 +604,7 @@ def _encode_pillow(frames: Sequence[Tuple[np.ndarray, int]], out_path: Path, loo
             loop=0 if loop else 1,
             disposal=2,
             optimize=False,
+            format="GIF",
         )
         verify_gif_file(tmp)
         tmp.replace(out_path)

@@ -33,7 +33,7 @@ log = logging.getLogger("gfs")
 
 TEAL = (169, 184, 0)
 PAGE_SETUP, PAGE_MAIN, PAGE_OPTIONS, PAGE_PROGRESS, PAGE_DONE = range(5)
-GIF_EXT = {".gif"}
+GIF_EXT = {".gif", ".webp"}
 IMAGE_EXT = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tif", ".tiff"}
 
 
@@ -198,6 +198,7 @@ class MainWindow(QMainWindow):
             min_confidence=float(self.cfg.value("min_confidence", 0.55)),
             max_short=_ms,
             export_mp4=self.cfg.value("export_mp4", "false") in (True, "true", "1", 1),
+            out_format=str(self.cfg.value("out_format", "auto") or "auto"),
             device=dev,
         )
         if self.opt["enhance"] not in ("off", "gpen256", "gpen512"):
@@ -364,7 +365,7 @@ class MainWindow(QMainWindow):
             "seam (face-only). Optional colour match is off by default in Options.",
             "subtitle", True))
 
-        self.slot_gif = ImageSlot("1 · Animated GIF", "Tap to pick a .gif")
+        self.slot_gif = ImageSlot("1 · Animated GIF / WebP", "Tap to pick a .gif or .webp")
         self.slot_gif.clicked.connect(self._pick_gif)
         self.slot_gif.dropped.connect(self.open_path)
         lay.addWidget(self.slot_gif)
@@ -402,7 +403,7 @@ class MainWindow(QMainWindow):
         return self.worker is not None and self.worker.isRunning()
 
     def _pick_gif(self):
-        p, _ = QFileDialog.getOpenFileName(self, "Animated GIF", "", "GIF (*.gif)")
+        p, _ = QFileDialog.getOpenFileName(self, "Animated GIF or WebP", "", "GIF / WebP (*.gif *.webp);;GIF (*.gif);;WebP (*.webp)")
         if p:
             self.set_gif(p)
 
@@ -451,7 +452,7 @@ class MainWindow(QMainWindow):
             self._update_summary()
 
         def failed(msg, tb):
-            self.slot_gif.clear_image("Tap to pick a .gif")
+            self.slot_gif.clear_image("Tap to pick a .gif or .webp")
             QMessageBox.warning(self, "GIF", msg)
 
         self.worker.done.connect(done)
@@ -514,12 +515,13 @@ class MainWindow(QMainWindow):
             seamless=bool(self.opt.get("seamless", False)),
             temporal_smooth=float(self.opt.get("temporal_smooth", 0.12)),
             export_mp4=bool(self.opt.get("export_mp4", False)),
+            out_format=str(self.opt.get("out_format", "auto")),
         )
 
     def _update_summary(self):
         parts = []
         if self.gif_info:
-            parts.append(f"GIF {self.gif_info.frame_count}f")
+            parts.append(f"{getattr(self.gif_info, 'fmt', 'gif').upper()} {self.gif_info.frame_count}f")
         if self.photo:
             parts.append(f"{len(self.photo.faces)} src face(s)")
         if self.rotation:
@@ -530,6 +532,10 @@ class MainWindow(QMainWindow):
         enh = self.opt.get("enhance", "gpen256")
         parts.append(ENHANCE_LABEL.get(None if enh == "off" else enh, enh))
         parts.append(f"short≤{int(self.opt.get('max_short', gifio.MAX_SHORT_SIDE))}")
+        _f = self.opt.get("out_format", "auto")
+        if _f == "auto" and self.gif_info is not None:
+            _f = getattr(self.gif_info, "fmt", "gif")
+        parts.append(f"→ {str(_f).upper()}")
         if self.opt.get("export_mp4"):
             parts.append("MP4 export")
         self.summary.setText(" · ".join(parts))
@@ -631,6 +637,16 @@ class MainWindow(QMainWindow):
         lay.addWidget(self.lbl_short)
         self.s_short.valueChanged.connect(lambda v: self.lbl_short.setText(f"{v} px"))
 
+        lay.addWidget(label("Output format (Auto = same as input)", "section"))
+        frow = QHBoxLayout()
+        self.fmt_btns = {}
+        for text, val in (("Auto", "auto"), ("GIF", "gif"), ("WebP", "webp"), ("MP4", "mp4")):
+            b = button(text)
+            b.setCheckable(True)
+            b.clicked.connect(lambda _=False, v=val: self._set_fmt(v))
+            self.fmt_btns[val] = b
+            frow.addWidget(b)
+        lay.addLayout(frow)
         self.chk_mp4 = QCheckBox("Also export MP4 (sharper, non-GIF alternative)")
         lay.addWidget(self.chk_mp4)
         lay.addWidget(label("Tip: leave short side at 720+ so output stays near the original size.", "hint", True))
@@ -664,6 +680,8 @@ class MainWindow(QMainWindow):
         self.s_short.setValue(int(self.opt.get("max_short", gifio.MAX_SHORT_SIDE)))
         self.lbl_short.setText(f"{self.s_short.value()} px")
         self.chk_mp4.setChecked(bool(self.opt.get("export_mp4", False)))
+        for v, b in self.fmt_btns.items():
+            b.setChecked(v == self.opt.get("out_format", "auto"))
         for v, b in self.dev_btns.items():
             b.setChecked(v == self.opt.get("device", "auto"))
         ref = self.opt.get("color_ref_path") or ""
@@ -674,6 +692,11 @@ class MainWindow(QMainWindow):
     def _set_enhance(self, v):
         self.opt["enhance"] = v
         for k, b in self.enh_btns.items():
+            b.setChecked(k == v)
+
+    def _set_fmt(self, v):
+        self.opt["out_format"] = v
+        for k, b in self.fmt_btns.items():
             b.setChecked(k == v)
 
     def _set_device(self, v):

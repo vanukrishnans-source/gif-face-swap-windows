@@ -48,6 +48,8 @@ class Settings:
     detector: str = "yolo"
     # Also write a sharper MP4 alongside the GIF (OpenCV mp4v; no FFmpeg binary)
     export_mp4: bool = False
+    # Primary output: "auto" (follow input: webp in -> webp out), "gif", "webp", "mp4"
+    out_format: str = "auto"
 
     def detect_opts(self):
         from .detect import DetectOpts
@@ -179,7 +181,7 @@ class Job:
 
         t_start = time.perf_counter()
         if progress:
-            progress(dict(stage="decode", done=0, total=1, detail="Reading GIF…"))
+            progress(dict(stage="decode", done=0, total=1, detail="Reading animation…"))
         info, raw_frames = gifio.decode(gif_path)
         if cancel and cancel():
             raise Cancelled()
@@ -261,26 +263,45 @@ class Job:
             self._tick(progress, "swap", i + 1, n, t1, extra)
 
         if progress:
-            progress(dict(stage="encode", done=0, total=1, detail="Writing animated GIF…"))
+            pass
+        fmt = (st.out_format or "auto").lower()
+        if fmt == "auto":
+            fmt = "webp" if getattr(info, "fmt", "gif") == "webp" else "gif"
+        if fmt not in ("gif", "webp", "mp4"):
+            fmt = "gif"
+        if progress:
+            progress(dict(stage="encode", done=0, total=1, detail=f"Writing animated {fmt.upper()}…"))
         out_dir = Path(st.out_dir) if st.out_dir else default_out_dir()
         out_dir.mkdir(parents=True, exist_ok=True)
         if out_path is None:
             stem = "".join(c for c in Path(gif_path).stem if c.isalnum() or c in "-_ ")[:40].strip() or "gif"
-            out_path = out_dir / f"GifFaceSwap_{stem}_{time.strftime('%Y%m%d-%H%M%S')}.gif"
+            out_path = out_dir / f"GifFaceSwap_{stem}_{time.strftime('%Y%m%d-%H%M%S')}.{fmt}"
         out_path = Path(out_path)
-        gifio.encode(out_frames, out_path, loop=True)
-        gifio.verify_gif_file(out_path)
+        if out_path.suffix.lower() != f".{fmt}":
+            out_path = out_path.with_suffix(f".{fmt}")
+        loop_count = int(getattr(info, "loop", 0) or 0)
+        if fmt == "webp":
+            gifio.encode_webp(out_frames, out_path, loop_count=loop_count)
+            encoder = "webp q95 m6 (Pillow)"
+        elif fmt == "mp4":
+            gifio.encode_mp4(out_frames, out_path)
+            encoder = "mp4"
+        else:
+            gifio.encode(out_frames, out_path, loop=True)
+            gifio.verify_gif_file(out_path)
+            encoder = "gif89a+pillow-dither"
         mp4_path = None
-        if st.export_mp4:
+        if st.export_mp4 and fmt != "mp4":
             if progress:
                 progress(dict(stage="encode", done=0, total=1, detail="Writing sharper MP4…"))
             mp4_path = out_path.with_suffix(".mp4")
             gifio.encode_mp4(out_frames, mp4_path)
 
         res = dict(
-            path=str(out_path), frames=n, W=W, H=H, mode="gif",
+            path=str(out_path), frames=n, W=W, H=H, mode=fmt, in_format=getattr(info, "fmt", "gif"),
+            loop=loop_count,
             fps=0.0, duration=sum(d for _, d in out_frames) / 1000.0,
-            encoder="gif89a+pillow-dither", audio="gif (no sound)",
+            encoder=encoder, audio="no sound",
             device=dev.label(), device_active=dev.active, per_model=dict(dev.per_model),
             enhance=ENHANCE_LABEL.get(st.enhance),
             color_match=bool(st.color_match),

@@ -181,6 +181,32 @@ def selftest(args):
         # Round-trip decode
         info2, frames2 = gifio.decode(out)
         c["gif_roundtrip_frames"] = info2.frame_count >= 1 and len(frames2) >= 1
+        # ---- WebP leg: animated WebP in -> auto -> animated WebP out ----
+        from PIL import Image as _PIL
+        webp_in = work / "tést ü.webp"
+        gifio.encode_webp([(f.bgr, f.delay_ms) for f in frames], webp_in, loop_count=0)
+        winfo, wframes = gifio.decode(webp_in)
+        c["webp_in_decoded"] = winfo.fmt == "webp" and winfo.frame_count == len(frames)
+        wout = out_dir / "selftest_output_webp.webp"
+        st_w = Settings(**{**st.__dict__, "out_format": "auto", "export_mp4": False})
+        wres = job.run_gif(webp_in, photo, st_w, out_path=wout)
+        c["webp_out_auto"] = wres.get("mode") == "webp" and Path(wres["path"]).suffix == ".webp"
+        with _PIL.open(wres["path"]) as wim:
+            wn = getattr(wim, "n_frames", 1)
+            wd = []
+            for k in range(wn):
+                wim.seek(k)
+                wim.load()
+                wd.append(int(wim.info.get("duration", 0)))
+        c["webp_out_frames"] = wn == wres["frames"] and wn >= 2
+        c["webp_out_durations"] = sum(wd) > 0 and abs(sum(wd) - int(wres["duration"] * 1000)) <= wn
+        # Static WebP in, explicit GIF out
+        static_in = work / "still.webp"
+        gifio.encode_webp([(frames[0].bgr, 100)], static_in)
+        sinfo, _ = gifio.decode(static_in)
+        c["webp_static_decoded"] = sinfo.frame_count == 1 and not sinfo.animated
+        report["webp"] = dict(out=wres["path"], frames=wn, durations_ms=wd,
+                              size=Path(wres["path"]).stat().st_size, w=wres["W"], h=wres["H"])
         # Informational only — default is off; CLI may enable with --color-match
         c["color_match_flag"] = bool(res.get("color_match"))
         report["output"] = dict(frames=info2.frame_count, size=out.stat().st_size,
@@ -227,6 +253,7 @@ def run_gif_cli(args):
     st = Settings(
         max_short=args.max_short, enhance=enh, device=args.device, out_dir=args.out or "",
         export_mp4=bool(getattr(args, "export_mp4", False)),
+        out_format=getattr(args, "out_format", "auto"),
         min_confidence=args.min_confidence, color_match=args.color_match,
         color_ref_path=args.color_ref or "", temporal_smooth=args.temporal_smooth,
         seamless=args.seamless,
@@ -253,6 +280,8 @@ def main(argv=None):
     p.add_argument("--temporal-smooth", type=float, default=0.12)
     p.add_argument("--export-mp4", action="store_true",
                    help="Also write a sharper MP4 alongside the GIF")
+    p.add_argument("--out-format", default="auto", choices=["auto", "gif", "webp", "mp4"],
+                   help="Output format (auto = follow input: .webp in -> .webp out)")
     p.add_argument("--out", default="")
     p.add_argument("--gif", default="")
     p.add_argument("--photo", default="")
